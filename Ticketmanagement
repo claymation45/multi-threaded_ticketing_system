@@ -1,0 +1,129 @@
+#include <iostream>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <map>
+#include <set>
+#include <vector>
+#include <chrono>
+
+using namespace std;
+
+struct Event {
+    int id;
+    string name;
+    int tickets;
+};
+
+struct User {
+    int id;
+    string name;
+    bool loggedIn = false;
+    set<int> purchasedEventIds;
+};
+
+map<int, Event> events = {
+    {101, {101, "Ado Hibana", 100}},
+    {102, {102, "Magical Mirai 2025", 200}},
+    {103, {103, "LE SSERAFIM TOUR 'EASY CRAZY HOT'", 300}}
+};
+
+map<int, User> users = {
+    {1, {1, "Clay", true}},
+    {2, {2, "Yuuto", true}},
+    {3, {3, "Pack", true}}
+};
+
+mutex ticketMutex;
+condition_variable_any ticketCond;
+
+void purchaseTicket(int userId, int eventId) {
+    unique_lock<mutex> lock(ticketMutex);
+    if (events.count(eventId) && users.count(userId) && users[userId].loggedIn) {
+        if (events[eventId].tickets > 0) {
+            events[eventId].tickets--;
+            users[userId].purchasedEventIds.insert(eventId);
+            cout << "[Thread " << this_thread::get_id() << "] User " << userId
+                 << " purchased ticket for Event " << eventId << endl;
+        } else {
+            cout << "Tickets sold out for event " << eventId << ".\n";
+            ticketCond.wait(lock);
+        }
+    } else {
+        cout << "Invalid user or event for purchase.\n";
+    }
+    this_thread::sleep_for(chrono::milliseconds(150));
+}
+
+void viewTickets(int eventId) {
+    lock_guard<mutex> lock(ticketMutex);
+    if (events.count(eventId)) {
+        cout << "[Thread " << this_thread::get_id() << "] Event: "
+             << events[eventId].name << ", Tickets Left: "
+             << events[eventId].tickets << endl;
+    } else {
+        cout << "Event ID " << eventId << " not found.\n";
+    }
+    this_thread::sleep_for(chrono::milliseconds(150));
+}
+
+void cancelTicket(int userId, int eventId) {
+    unique_lock<mutex> lock(ticketMutex);
+    if (users.count(userId) && events.count(eventId)) {
+        if (users[userId].purchasedEventIds.count(eventId)) {
+            users[userId].purchasedEventIds.erase(eventId);
+            events[eventId].tickets++;
+            cout << "[Thread " << this_thread::get_id() << "] Ticket canceled: User "
+                 << userId << " Event " << eventId << endl;
+            ticketCond.notify_one();
+        } else {
+            cout << "User " << userId << " has no ticket for event " << eventId << ".\n";
+        }
+    } else {
+        cout << "Invalid user or event for cancellation.\n";
+    }
+    this_thread::sleep_for(chrono::milliseconds(150));
+}
+
+int main() {
+    int choice;
+    do {
+        cout << "\n=========== Ticket Management Menu ===========\n";
+        cout << "[1] Purchase Ticket\n";
+        cout << "[2] View Tickets\n";
+        cout << "[3] Cancel Ticket\n";
+        cout << "[4] Exit\n";
+        cout << "Enter your choice: ";
+        cin >> choice;
+
+        int userId, eventId;
+        switch (choice) {
+            case 1:
+                cout << "Enter User ID: ";
+                cin >> userId;
+                cout << "Enter Event ID: ";
+                cin >> eventId;
+                purchaseTicket(userId, eventId);
+                break;
+            case 2:
+                cout << "Enter Event ID to view: ";
+                cin >> eventId;
+                viewTickets(eventId);
+                break;
+            case 3:
+                cout << "Enter User ID: ";
+                cin >> userId;
+                cout << "Enter Event ID: ";
+                cin >> eventId;
+                cancelTicket(userId, eventId);
+                break;
+            case 4:
+                cout << "Exiting Ticket Management...\n";
+                break;
+            default:
+                cout << "Invalid choice. Please enter 1-4.\n";
+        }
+    } while (choice != 4);
+
+    return 0;
+}
